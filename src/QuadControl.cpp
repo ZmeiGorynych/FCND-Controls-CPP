@@ -1,6 +1,7 @@
 #include "Common.h"
 #include "QuadControl.h"
-
+#include <cmath>
+#include <iostream>
 #include "Utility/SimpleConfig.h"
 
 #include "Utility/StringUtils.h"
@@ -24,12 +25,13 @@ void QuadControl::Init()
 	ParamsHandle config = SimpleConfig::GetInstance();
 
 	// Load parameters (default to 0)
-	kpPosXY = config->Get(_config + ".kpPosXY", 0);
-	kpPosZ = config->Get(_config + ".kpPosZ", 0);
+	kpPosXY = config->Get(_config + "._kpPosXY", 0);
+	kpPosZ = config->Get(_config + "._kpPosZ", 0);
 	KiPosZ = config->Get(_config + ".KiPosZ", 0);
 
-	kpVelXY = config->Get(_config + ".kpVelXY", 0);
-	kpVelZ = config->Get(_config + ".kpVelZ", 0);
+	// as I know their ratio to the position gains, why bother setting them?
+	kpVelXY = kpPosXY * 3.f;// config->Get(_config + ".kpVelXY", 0);
+	kpVelZ = kpPosZ * 3.f;// config->Get(_config + ".kpVelZ", 0);
 
 	kpBank = config->Get(_config + ".kpBank", 0);
 	kpYaw = config->Get(_config + ".kpYaw", 0);
@@ -182,8 +184,28 @@ float QuadControl::AltitudeControl(float posZCmd, float velZCmd, float posZ, flo
 	float thrust = 0;
 
 	////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
+	float z_err = (posZCmd - posZ);
+	float hdot_cmd = kpPosZ * z_err + velZCmd;
 
+		//TODO Limit the ascent / descent rate
+		// hdot_cmd = np.clip(hdot_cmd, -self.max_descent_rate, self.max_ascent_rate)
 
+	float acceleration_cmd = accelZCmd + kpVelZ * (hdot_cmd - velZ);
+
+	// add the integration term
+	integratedAltitudeError += dt * z_err;
+	acceleration_cmd += KiPosZ * integratedAltitudeError;	
+
+	thrust = mass * acceleration_cmd / R(2, 2);
+
+	/* TODO: limit thrust rate
+	if thrust > MAX_THRUST:
+	thrust = MAX_THRUST
+		elif thrust < 0.0 :
+		thrust = 0.0
+		return thrust
+	*/
+	
 
 	/////////////////////////////// END STUDENT CODE ////////////////////////////
 
@@ -220,9 +242,9 @@ V3F QuadControl::LateralPositionControl(V3F posCmd, V3F velCmd, V3F pos, V3F vel
 	V3F accelCmd = accelCmdFF;
 
 	////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
-
-
-
+	//TODO: implement acceleration capping?
+	accelCmd += kpPosXY * (posCmd - pos);
+	accelCmd += kpVelXY * (velCmd - vel);
 	/////////////////////////////// END STUDENT CODE ////////////////////////////
 
 	return accelCmd;
@@ -243,10 +265,13 @@ float QuadControl::YawControl(float yawCmd, float yaw)
 
 	float yawRateCmd = 0;
 	////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
+	float yaw_err = remainderf(yawCmd - yaw, 2*M_PI);
+	if (abs(yaw_err) > M_PI)
+		std::cout << "Oh noes!";
 
+	yawRateCmd = kpYaw * yaw_err;
 
 	/////////////////////////////// END STUDENT CODE ////////////////////////////
-
 	return yawRateCmd;
 
 }
