@@ -30,8 +30,8 @@ void QuadControl::Init()
 	KiPosZ = config->Get(_config + ".KiPosZ", 0);
 
 	// as I know their ratio to the position gains, why bother setting them?
-	kpVelXY = kpPosXY * 4.f;// config->Get(_config + ".kpVelXY", 0);
-	kpVelZ = kpPosZ * 4.f;// config->Get(_config + ".kpVelZ", 0);
+	kpVelXY = kpPosXY * 0.33f;// config->Get(_config + ".kpVelXY", 0);
+	kpVelZ = kpPosZ * 0.33f;// config->Get(_config + ".kpVelZ", 0);
 
 	kpBank = config->Get(_config + ".kpBank", 0);
 	kpYaw = config->Get(_config + ".kpYaw", 0);
