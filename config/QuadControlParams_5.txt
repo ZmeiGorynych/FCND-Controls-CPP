@@ -24,8 +24,8 @@ _kpPosZ =10
 KiPosZ = 5#30
 
 # Velocity control gains
-kpVelXYmult = 0.4
-kpVelZmult = 0.4
+kpVelXYmult = 0.5
+kpVelZmult = 4
 
 # Angle control gains
 kpBank =11#8

@@ -30,8 +30,8 @@ void QuadControl::Init()
 	KiPosZ = config->Get(_config + ".KiPosZ", 0);
 
 	// as I know their ratio to the position gains, why bother setting them?
-	kpVelXY = kpPosXY * 0.33f;// config->Get(_config + ".kpVelXY", 0);
-	kpVelZ = kpPosZ * 0.33f;// config->Get(_config + ".kpVelZ", 0);
+	kpVelXY = kpPosXY * (config->Get(_config + ".kpVelXYmult", 0));
+	kpVelZ = kpPosZ *  (config->Get(_config + ".kpVelZmult", 0));
 
 	kpBank = config->Get(_config + ".kpBank", 0);
 	kpYaw = config->Get(_config + ".kpYaw", 0);
@@ -187,7 +187,9 @@ float QuadControl::AltitudeControl(float posZCmd, float velZCmd, float posZ, flo
 	float g = 9.81;
 	////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
 	float z_err = (posZCmd - posZ);
-	float hdot_cmd = kpPosZ * z_err + velZCmd;
+	float hdot_cmd = kpPosZ * z_err + velZCmd; // positive is down!
+
+	hdot_cmd = max(min(hdot_cmd, maxDescentRate), -maxAscentRate);
 
 		//TODO Limit the ascent / descent rate
 		// hdot_cmd = np.clip(hdot_cmd, -self.max_descent_rate, self.max_ascent_rate)
@@ -238,12 +240,14 @@ V3F QuadControl::LateralPositionControl(V3F posCmd, V3F velCmd, V3F pos, V3F vel
 	V3F accelCmd = accelCmdFF;
 
 	////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
-	//TODO: implement acceleration capping?
 	accelCmd += kpPosXY * (posCmd - pos);
 	accelCmd += kpVelXY * (velCmd - vel);
+
+	float accel_scaler = min(1.0, maxAccelXY / sqrt(accelCmd[0] * accelCmd[0] +
+		accelCmd[1] * accelCmd[1] + 0.0001));
 	/////////////////////////////// END STUDENT CODE ////////////////////////////
 
-	return accelCmd;
+	return accelCmd*accel_scaler;
 }
 
 // returns desired yaw rate
