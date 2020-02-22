@@ -30,8 +30,8 @@ void QuadControl::Init()
 	KiPosZ = config->Get(_config + ".KiPosZ", 0);
 
 	// as I know their ratio to the position gains, why bother setting them?
-	kpVelXY = kpPosXY * 3.f;// config->Get(_config + ".kpVelXY", 0);
-	kpVelZ = kpPosZ * 3.f;// config->Get(_config + ".kpVelZ", 0);
+	kpVelXY = kpPosXY * 4.f;// config->Get(_config + ".kpVelXY", 0);
+	kpVelZ = kpPosZ * 4.f;// config->Get(_config + ".kpVelZ", 0);
 
 	kpBank = config->Get(_config + ".kpBank", 0);
 	kpYaw = config->Get(_config + ".kpYaw", 0);
@@ -72,17 +72,23 @@ VehicleCommand QuadControl::GenerateMotorCommands(float collThrustCmd, V3F momen
 
 	////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
  // TODO this will be later replaced by altitude control
-	collThrustCmd = 0.95*mass * 9.81;
+	
 
-	auto mc = V3F(momentCmd[0] * M_SQRT2 / L,
-		momentCmd[1] * M_SQRT2 / L,
-		momentCmd[2] / kappa);
+	auto mc = V3F(momentCmd.x *M_SQRT2 / L,
+		momentCmd.y *M_SQRT2 / L,
+		-momentCmd.z / kappa);
 
-	cmd.desiredThrustsN[0] = (collThrustCmd + mc[0] + mc[1] + mc[2]) / 4.f; // front left
-	cmd.desiredThrustsN[1] = (collThrustCmd - mc[0] + mc[1] - mc[2]) / 4.f; // front right
-	cmd.desiredThrustsN[2] = (collThrustCmd - mc[0] - mc[1] + mc[2]) / 4.f; // rear left
-	cmd.desiredThrustsN[3] = (collThrustCmd + mc[0] - mc[1] - mc[2]) / 4.f; // rear right
-
+	cmd.desiredThrustsN[0] = (collThrustCmd + mc.x + mc.y + mc.z) / 4.f; // front left
+	cmd.desiredThrustsN[1] = (collThrustCmd - mc.x + mc.y - mc.z) / 4.f; // front right
+	cmd.desiredThrustsN[2] = (collThrustCmd + mc.x - mc.y - mc.z) / 4.f; // rear left
+	cmd.desiredThrustsN[3] = (collThrustCmd - mc.y - mc.y + mc.z) / 4.f; // rear right
+	/*float up_scaler = 1.0;
+	float down_scaler = 1.0;
+	for(int i=0; i<4; i++){
+		float thresh_thrust = max(minMotorThrust, min(maxMotorThrust, cmd.desiredThrustsN[i]));
+		if(cmd.desiredThrustsN[i] < thresh_thrust)
+			
+	}*/
 	/////////////////////////////// END STUDENT CODE ////////////////////////////
 
 	return cmd;
@@ -107,7 +113,8 @@ V3F QuadControl::BodyRateControl(V3F pqrCmd, V3F pqr)
 
 	////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
 	auto pqr_err = pqrCmd - pqr;
-	momentCmd = V3F(Ixx, Iyy, Izz) * kpPQR * pqr_err;
+	auto I = V3F(Ixx, Iyy, Izz);
+	momentCmd = I * kpPQR * pqr_err;
 	/////////////////////////////// END STUDENT CODE ////////////////////////////
 
 	return momentCmd;
@@ -136,31 +143,26 @@ V3F QuadControl::RollPitchControl(V3F accelCmd, Quaternion<float> attitude, floa
 	Mat3x3F R = attitude.RotationMatrix_IwrtB();
 
 	////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
+
 	float c_d = collThrustCmd / mass;
 	float p_cmd, q_cmd;
-	if(collThrustCmd > 0.0){
-		float target_R13 = - min(max(accelCmd[0]/ c_d, -maxTiltAngle), maxTiltAngle);
-		float target_R23 = - min(max(accelCmd[1]/ c_d, -maxTiltAngle), maxTiltAngle);
+	
+	float target_R13 = min(max(-accelCmd[0]/ c_d, -maxTiltAngle), maxTiltAngle);
+	float target_R23 = min(max(-accelCmd[1]/ c_d, -maxTiltAngle), maxTiltAngle);
+	float R13_err = R(0, 2) - target_R13;
+	float R23_err = R(1, 2) - target_R23;
 
-		p_cmd = (1 / R(2, 2)) * \
-			(-R(1, 0) * kpBank * (R(0, 2) - target_R13) + \
-				R(0, 0) * kpBank * (R(1, 2) - target_R23));
-		q_cmd = (1 / R(2, 2)) * \
-			(-R(1, 1) * kpBank * (R(0, 2) - target_R13) + \
-				R(0, 1) * kpBank * (R(1, 2) - target_R23));
-	}
-	else {
-	// Otherwise command no rate
-		p_cmd = 0.0;
-		q_cmd = 0.0;
-	}
-	pqrCmd = V3F(p_cmd, q_cmd, 0.0);
+	p_cmd = -(R(1, 0) * R13_err - R(0, 0) * R23_err);
+	q_cmd = -(R(1, 1) * R13_err - R(0, 1) * R23_err);
+
+	pqrCmd = V3F(p_cmd, q_cmd, 0.0)*kpBank/R(2,2);
 	/////////////////////////////// END STUDENT CODE ////////////////////////////
 
 	return pqrCmd;
 }
 
-float QuadControl::AltitudeControl(float posZCmd, float velZCmd, float posZ, float velZ, Quaternion<float> attitude, float accelZCmd, float dt)
+float QuadControl::AltitudeControl(float posZCmd, float velZCmd, float posZ, float velZ, 
+	Quaternion<float> attitude, float accelZCmd, float dt)
 {
 	// Calculate desired quad thrust based on altitude setpoint, actual altitude,
 	//   vertical velocity setpoint, actual vertical velocity, and a vertical 
@@ -182,7 +184,7 @@ float QuadControl::AltitudeControl(float posZCmd, float velZCmd, float posZ, flo
 
 	Mat3x3F R = attitude.RotationMatrix_IwrtB();
 	float thrust = 0;
-
+	float g = 9.81;
 	////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
 	float z_err = (posZCmd - posZ);
 	float hdot_cmd = kpPosZ * z_err + velZCmd;
@@ -190,23 +192,17 @@ float QuadControl::AltitudeControl(float posZCmd, float velZCmd, float posZ, flo
 		//TODO Limit the ascent / descent rate
 		// hdot_cmd = np.clip(hdot_cmd, -self.max_descent_rate, self.max_ascent_rate)
 
-	float acceleration_cmd = accelZCmd + kpVelZ * (hdot_cmd - velZ);
+	float acceleration_cmd = -accelZCmd + g - kpVelZ * (hdot_cmd - velZ);
 
 	// add the integration term
 	integratedAltitudeError += dt * z_err;
-	acceleration_cmd += KiPosZ * integratedAltitudeError;	
+	acceleration_cmd -= KiPosZ * integratedAltitudeError;	
 
 	thrust = mass * acceleration_cmd / R(2, 2);
 
-	/* TODO: limit thrust rate
-	if thrust > MAX_THRUST:
-	thrust = MAX_THRUST
-		elif thrust < 0.0 :
-		thrust = 0.0
-		return thrust
-	*/
-	
+	//thrust = mass * 9.81;
 
+	
 	/////////////////////////////// END STUDENT CODE ////////////////////////////
 
 	return thrust;
